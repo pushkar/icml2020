@@ -58,9 +58,9 @@ There are still many open research opportunities along these lines. In particula
 
 One way to think about the problem of non-experts is agnostic active learning \cite{balcan2009agnostic}, a framework which relaxes the assumption that the oracle's labels are trustworthy, yet still has positive theoretical results. Other  recent  work  assumes  that  a  learner  may  repeat  queries  to  be  labeled  by  multiple annotators \cite{sheng2008get}. They analyze the different strategies that could be used for re-labeling. This introduces another interesting research issues.  When should the learner decide to query for the (potentially noisy) label of a new unlabeled instance, versus querying for repeated labels to de-noise an existing but suspicious training instance?  How can the learner even decide that the quality of a label is suspect?
 
-In the context of neural networks, \cite{gupta2019learning} show how a denoising layer can be added to make active learning robust to label noises. Another approach more recently has been in designing an end-to-end framework such as \cite{platanios2020learning} where a new loss function is introduced that includes instances difficulties and predictor competencies. The authors claim that due to their framework annotators are assigned to instances they are more likely to label correctly  while performing crowdsourcing. Both these approaches introduces bias in the learning process, either by introducing a change in the model or adding new parameters in the loss function. To their credit they provide various examples and their results shows promise. In our approach we separate the process of learning from the labeling process, which means that in our approach the learning process is not biased by the actual labeling. In a practical setting someone could choose to label multiple batches together before performing one active learning loop to update the model. In our view separating the active learning and labeling process makes our approach more practical.
+In the context of neural networks, \cite{gupta2019learning} show how a denoising layer can be added to make active learning robust to label noises. Another approach more recently has been in designing an end-to-end framework such as \cite{platanios2020learning} where a new loss function is introduced that includes instances difficulties and predictor competencies (we use the word proficiency instead of competency in our paper). The authors claim that due to their framework annotators are assigned to instances they are more likely to label correctly  while performing crowdsourcing. Both these approaches introduces bias in the learning process, either by introducing a change in the model or adding new parameters in the loss function. To their credit they provide various examples and their results shows promise. In our approach we separate the process of learning from the labeling process, which means that in our approach the learning process is not biased by the actual labeling. In a practical setting someone could choose to label multiple batches together before performing one active learning loop to update the model. In our view separating the active learning and labeling process makes our approach more practical.
 
-\cite{ipeirotis2014repeated} goes through the basics of repeated labeling and show that it is indeed useful. In their paper they discuss basic repeated labeling strategies such as majority voting, fixed round robin strategy with and without costs and selective repeated labeling. They also show that incorrectly labeled examples tend to have higher model uncertainty scores, compared to correctly labeled examples. They also introduce soft labeling and weighted labeling in the context of active learning. They conclude in their paper that selective repeated-labeling is preferable after taking into account both labeling uncertainty and model uncertainity. This conclusion has heavily influenced our approach.
+\cite{ipeirotis2014repeated} goes through the basics of repeated labeling and show that it is indeed useful. In their paper they discuss basic repeated labeling strategies such as majority voting, fixed round robin strategy with and without costs and selective repeated labeling. They also show that incorrectly labeled examples tend to have higher model uncertainty scores, compared to correctly labeled examples. They also introduce soft labeling and weighted labeling in the context of active learning. They conclude in their paper that selective repeated-labeling is preferable after taking into account both labeling uncertainty and model uncertainty. This conclusion has heavily influenced our approach.
 
 % \vspace{1em}
 % The main contributions of this work are:
@@ -118,27 +118,32 @@ We first select a candidate batch according to \eqref{eq:acquisition_function}. 
 \caption{}
 \end{figure}
 
-\subsection{Modeling proficiency of the oracle}
-
-The proficiency of the oracle is modeled as a classification loss. In this case we use the log loss between the oracle's labels and the predictions of the model.
-
-\begin{equation}
-    p = \frac{1}{N} \sum^c_{i=1} D_{KL} (y_i || \hat{y}_c)
-\end{equation}
-
 \subsection{Updating from labelers feedback}
 
 The oracle is imperfect. So for updating the posterior probabilities of the labels of a candidate point we can use the Bayes Rule. It allows us to add a prior to the labels and the confidence in the labelers labels. Using the Bayes rule
 
-\begin{equation*}
+\begin{equation}
     P(C|D) = \frac{P(D|C)P(C)}{ \sum_{C \in \boldsymbol{C}} P(D|C)P(C)}
-\end{equation*}
+    \label{update_posterior}
+\end{equation}
 
 where $\boldsymbol{C}$ is the set of all the labels of $C$ and $D$ is the proficiency of the labeler. When multiple labelers have labeled a candidate data point, its posterior is updated using this method.
 
+Consider the case of a binary classification problem. If the prior is uniform on the binary labels and the labeler has the worst proficiency (the worst proficiency value is 0.5 which means that the labeler randomly chooses a label), the posterior calculated using \eqref{update_posterior} has the desired effect that the label uncertainty or entropy never decreases. However if the prior is not uniform or the labeler is slightly better than labeling at random, entropy of the labels will decrease with every repeated label as shown in Figure \ref{fig:entropy}.
+
+\subsection{Modeling proficiency of the oracle}
+
+In the most crudest sense, a labeler can be thought of as a classification model. The proficiency of the labeler then can be modeled by their accuracy. This works well in practice. In our experiments though we use the cross entropy between the oracle's labels and the predictions of the model as the proficiency score. It has the additional benefit of taking into consideration the uncertainty of the labels while finding proficiency. This allows us to use data from the pool set as control data points for whom we might not know the true labels while creating a candidate query.
+
+\begin{equation}
+    p = H(y_i, \hat{y}_c) = \sum^c_{i=1} y_i log \frac{1}{\hat{y}_c}
+\end{equation}
+
 \subsection{Extending BatchBALD algorithm}
 
-After running a few labeling loops we take the candidate data points whose entropy is below a certain acceptable threshold. In our experiments we took the candidate points below the median entropy and fed them into the training set. After that we run the active learning loops, that is we reinitialize the model using the original training set and the new data acquired after the labeling procedure. We then rerun the MC dropout to get a new candidate batch using the BatchBALD acquisition function given be \eqref{eq:acquisition_function}.
+In this labeling approach we do not restrict ourselves to acquiring labels for a batch once before retraining our model. Here we get a new candidate batch from our pool dataset and gather repeated labels for it until they are below a certain entropy. After that we add it to our training set and run the active learning loop, that is we reinitialize the model using the original training set and the new acquired data after repeated labeling.
+
+After the new model is learned, we then rerun the MC dropout to get a new candidate batch using the BatchBALD acquisition function and repeating the process. Overall this approach allows us to control the quality of the labeled data that goes into training. If the current batch is not satisfactorily labeled, it can be discarded without affecting the learning process. In this way the active learner can build the model with high confidence from data that has less label uncertainty.
 
 % \begin{algorithm}[tb]
 %   \caption{Extend BatchBALD}
